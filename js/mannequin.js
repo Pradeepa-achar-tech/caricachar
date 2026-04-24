@@ -1,0 +1,350 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// A simple articulated mannequin built from capsules + spheres. Each joint is a
+// THREE.Group positioned at its parent joint's end; the mesh hangs beneath so the
+// group's rotation rotates the whole downstream chain.
+
+export function renderPose3D(root) {
+  root.innerHTML = `
+    <section class="panel">
+      <h1>3D Pose reference</h1>
+      <p style="color:var(--muted); margin-top:-4px;">
+        Rotate the camera with drag. Pose the mannequin with the sliders on the right,
+        or click a preset. Use the silhouette as a tracing reference in Studio.
+      </p>
+      <div id="pose3d-root">
+        <canvas id="pose3d-canvas"></canvas>
+        <aside class="pose-ctrl" id="pose-ctrl"></aside>
+      </div>
+    </section>
+  `;
+
+  const canvas = root.querySelector('#pose3d-canvas');
+  const ctrl = root.querySelector('#pose-ctrl');
+
+  // renderer
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  const resize = () => {
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  };
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x11111b);
+  scene.fog = new THREE.Fog(0x11111b, 8, 20);
+
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+  camera.position.set(0, 1.4, 5);
+
+  // lights
+  scene.add(new THREE.HemisphereLight(0xddeeff, 0x222233, 0.7));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+  sun.position.set(3, 6, 4);
+  scene.add(sun);
+  const rim = new THREE.DirectionalLight(0xffb480, 0.6);
+  rim.position.set(-4, 2, -3);
+  scene.add(rim);
+
+  // ground
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(6, 64),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a26, roughness: 1 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  scene.add(ground);
+  // subtle grid
+  const grid = new THREE.GridHelper(8, 16, 0x2a2a3c, 0x1e1e2c);
+  grid.position.y = 0.001;
+  scene.add(grid);
+
+  // controls
+  const controls = new OrbitControls(camera, canvas);
+  controls.target.set(0, 1, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.1;
+  controls.minDistance = 2;
+  controls.maxDistance = 10;
+
+  // mannequin
+  const mat = new THREE.MeshStandardMaterial({ color: 0xe7c09a, roughness: 0.6, metalness: 0.05 });
+  const jointMat = new THREE.MeshStandardMaterial({ color: 0xc98b66, roughness: 0.5, metalness: 0.1 });
+
+  // group hierarchy — all measurements in "body units". 1 unit ≈ 1 m.
+  const joints = {};
+
+  function bone(parent, name, length, radius, offsetY = 0) {
+    const group = new THREE.Group();
+    group.position.y = offsetY; // positioned at the joint
+    parent.add(group);
+    // mesh hangs DOWN from group origin (joint)
+    const seg = new THREE.Mesh(new THREE.CapsuleGeometry(radius, length - radius * 2, 6, 12), mat);
+    seg.position.y = -length / 2;
+    group.add(seg);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.15, 16, 12), jointMat);
+    group.add(ball);
+    group.userData = { length };
+    joints[name] = group;
+    return group;
+  }
+
+  // root (pelvis)
+  const pelvis = new THREE.Group();
+  pelvis.position.set(0, 1.0, 0);
+  scene.add(pelvis);
+  joints.pelvis = pelvis;
+
+  // Hip plate
+  const hipBox = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.22, 0.28), mat);
+  pelvis.add(hipBox);
+
+  // Spine / torso — bone up, so we flip: attach and rotate manually.
+  const torsoGroup = new THREE.Group();
+  pelvis.add(torsoGroup);
+  joints.torso = torsoGroup;
+  // torso mesh goes upward from pelvis
+  const torsoLen = 0.65;
+  const torsoMesh = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.18, torsoLen - 0.36, 8, 16),
+    mat
+  );
+  torsoMesh.position.y = torsoLen / 2 + 0.05;
+  torsoGroup.add(torsoMesh);
+  torsoGroup.userData = { length: torsoLen };
+
+  // shoulders plate
+  const shoulderPlate = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.14, 0.28), mat);
+  shoulderPlate.position.y = torsoLen + 0.08;
+  torsoGroup.add(shoulderPlate);
+
+  // Head
+  const neckGroup = new THREE.Group();
+  neckGroup.position.y = torsoLen + 0.15;
+  torsoGroup.add(neckGroup);
+  joints.neck = neckGroup;
+  const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.14, 12), mat);
+  neckMesh.position.y = 0.07;
+  neckGroup.add(neckMesh);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 16), mat);
+  head.position.y = 0.26;
+  head.scale.y = 1.2;
+  neckGroup.add(head);
+
+  // Arms (hanging down from shoulder)
+  function makeArm(sideSign, name) {
+    const shoulder = new THREE.Group();
+    shoulder.position.set(sideSign * 0.28, torsoLen + 0.08, 0);
+    torsoGroup.add(shoulder);
+    joints[name + 'Shoulder'] = shoulder;
+    // Upper arm hangs down
+    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.24, 6, 12), mat);
+    upper.position.y = -0.20;
+    shoulder.add(upper);
+    shoulder.add(new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), jointMat));
+
+    const elbow = new THREE.Group();
+    elbow.position.y = -0.40;
+    shoulder.add(elbow);
+    joints[name + 'Elbow'] = elbow;
+    const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.22, 6, 12), mat);
+    lower.position.y = -0.18;
+    elbow.add(lower);
+    elbow.add(new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 10), jointMat));
+
+    // wrist + hand (mitten)
+    const wrist = new THREE.Group();
+    wrist.position.y = -0.36;
+    elbow.add(wrist);
+    joints[name + 'Wrist'] = wrist;
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.17, 0.06), mat);
+    hand.position.y = -0.08;
+    wrist.add(hand);
+  }
+  makeArm(1, 'right');
+  makeArm(-1, 'left');
+
+  // Legs
+  function makeLeg(sideSign, name) {
+    const hip = new THREE.Group();
+    hip.position.set(sideSign * 0.12, -0.05, 0);
+    pelvis.add(hip);
+    joints[name + 'Hip'] = hip;
+    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.36, 6, 12), mat);
+    upper.position.y = -0.26;
+    hip.add(upper);
+    hip.add(new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), jointMat));
+
+    const knee = new THREE.Group();
+    knee.position.y = -0.52;
+    hip.add(knee);
+    joints[name + 'Knee'] = knee;
+    const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.34, 6, 12), mat);
+    lower.position.y = -0.25;
+    knee.add(lower);
+    knee.add(new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), jointMat));
+
+    const ankle = new THREE.Group();
+    ankle.position.y = -0.50;
+    knee.add(ankle);
+    joints[name + 'Ankle'] = ankle;
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.06, 0.22), mat);
+    foot.position.set(0, -0.03, 0.06);
+    ankle.add(foot);
+  }
+  makeLeg(1, 'right');
+  makeLeg(-1, 'left');
+
+  // ----- joint control definitions -----
+  // Each entry: {label, target-path (joint name), axis: 'x'|'y'|'z', min, max}
+  const jointDefs = [
+    { label: 'Head tilt (front/back)', key: 'neck', axis: 'x', min: -0.6, max: 0.6 },
+    { label: 'Head turn (l/r)',        key: 'neck', axis: 'y', min: -1.2, max: 1.2 },
+
+    { label: 'Torso bend (front)',     key: 'torso', axis: 'x', min: -0.5, max: 0.8 },
+    { label: 'Torso twist',            key: 'torso', axis: 'y', min: -0.8, max: 0.8 },
+    { label: 'Torso lean (l/r)',       key: 'torso', axis: 'z', min: -0.5, max: 0.5 },
+
+    { label: 'L shoulder fwd/back',    key: 'leftShoulder', axis: 'x', min: -2.2, max: 2.2 },
+    { label: 'L shoulder out',         key: 'leftShoulder', axis: 'z', min: -1.7, max: 0.5 },
+    { label: 'L shoulder rotate',      key: 'leftShoulder', axis: 'y', min: -1.5, max: 1.5 },
+    { label: 'L elbow bend',           key: 'leftElbow', axis: 'x', min: 0, max: 2.4 },
+
+    { label: 'R shoulder fwd/back',    key: 'rightShoulder', axis: 'x', min: -2.2, max: 2.2 },
+    { label: 'R shoulder out',         key: 'rightShoulder', axis: 'z', min: -0.5, max: 1.7 },
+    { label: 'R shoulder rotate',      key: 'rightShoulder', axis: 'y', min: -1.5, max: 1.5 },
+    { label: 'R elbow bend',           key: 'rightElbow', axis: 'x', min: 0, max: 2.4 },
+
+    { label: 'L hip fwd/back',         key: 'leftHip', axis: 'x', min: -1.4, max: 1.8 },
+    { label: 'L hip out',              key: 'leftHip', axis: 'z', min: -1.2, max: 0.3 },
+    { label: 'L knee bend',            key: 'leftKnee', axis: 'x', min: -2.4, max: 0 },
+
+    { label: 'R hip fwd/back',         key: 'rightHip', axis: 'x', min: -1.4, max: 1.8 },
+    { label: 'R hip out',              key: 'rightHip', axis: 'z', min: -0.3, max: 1.2 },
+    { label: 'R knee bend',            key: 'rightKnee', axis: 'x', min: -2.4, max: 0 },
+  ];
+
+  // presets (all values in radians)
+  const presets = {
+    'Idle': {},
+    'Walking': {
+      leftShoulder_x: -0.7, rightShoulder_x: 0.7,
+      leftHip_x: 0.6, rightHip_x: -0.4,
+      leftKnee_x: -0.3, rightKnee_x: -0.8,
+    },
+    'Running': {
+      torso_x: 0.3,
+      leftShoulder_x: -1.4, rightShoulder_x: 1.3,
+      leftElbow_x: 1.6, rightElbow_x: 1.6,
+      leftHip_x: 1.2, rightHip_x: -0.8,
+      leftKnee_x: -1.6, rightKnee_x: -1.1,
+    },
+    'Contrapposto': {
+      torso_z: 0.2, torso_y: 0.2,
+      leftHip_z: -0.15, rightHip_z: 0.15,
+      rightKnee_x: -0.3,
+    },
+    'Power stance': {
+      torso_z: 0,
+      leftShoulder_z: -0.6, rightShoulder_z: 0.6,
+      leftHip_z: -0.3, rightHip_z: 0.3,
+      leftKnee_x: -0.2, rightKnee_x: -0.2,
+    },
+    'Wave': {
+      rightShoulder_x: -2.0, rightShoulder_z: 1.0,
+      rightElbow_x: 1.2,
+    },
+    'Sit': {
+      torso_x: 0.1,
+      leftHip_x: 1.5, rightHip_x: 1.5,
+      leftKnee_x: -1.7, rightKnee_x: -1.7,
+    },
+  };
+
+  // ----- UI -----
+  ctrl.innerHTML = `
+    <h3>Presets</h3>
+    <div class="preset-row" id="preset-row"></div>
+    <button class="btn" id="reset-pose" style="width:100%; margin-bottom:10px;">↺ Reset</button>
+    <button class="btn primary" id="snap-pose" style="width:100%; margin-bottom:10px;">📸 Save pose as reference</button>
+    <h3>Joints</h3>
+    <div id="slider-host"></div>
+  `;
+
+  const sliderHost = ctrl.querySelector('#slider-host');
+  const sliderEls = [];
+  jointDefs.forEach(def => {
+    const wrap = document.createElement('div');
+    wrap.className = 'slider-group';
+    const id = `${def.key}_${def.axis}`;
+    wrap.innerHTML = `
+      <label><span>${def.label}</span><span class="val" data-val-for="${id}">0°</span></label>
+      <input type="range" min="${def.min}" max="${def.max}" step="0.01" value="0" data-joint="${id}">
+    `;
+    sliderHost.appendChild(wrap);
+    const input = wrap.querySelector('input');
+    const valEl = wrap.querySelector(`[data-val-for="${id}"]`);
+    input.addEventListener('input', () => {
+      const v = Number(input.value);
+      joints[def.key].rotation[def.axis] = v;
+      valEl.textContent = Math.round((v * 180) / Math.PI) + '°';
+    });
+    sliderEls.push({ input, def, valEl });
+  });
+
+  function setPose(poseMap) {
+    sliderEls.forEach(({ input, def, valEl }) => {
+      const id = `${def.key}_${def.axis}`;
+      const v = poseMap[id] || 0;
+      input.value = v;
+      joints[def.key].rotation[def.axis] = v;
+      valEl.textContent = Math.round((v * 180) / Math.PI) + '°';
+    });
+  }
+
+  const presetRow = ctrl.querySelector('#preset-row');
+  Object.keys(presets).forEach(name => {
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.textContent = name;
+    b.addEventListener('click', () => setPose(presets[name]));
+    presetRow.appendChild(b);
+  });
+
+  ctrl.querySelector('#reset-pose').addEventListener('click', () => setPose({}));
+  ctrl.querySelector('#snap-pose').addEventListener('click', () => {
+    // snapshot as a reference image
+    renderer.render(scene, camera);
+    const dataUrl = canvas.toDataURL('image/png');
+    localStorage.setItem('cl.poseReference', dataUrl);
+    const ok = document.createElement('div');
+    ok.textContent = 'Pose saved — switch to Studio and toggle Guide to see a dimmed silhouette.';
+    ok.style.cssText = 'position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--good); color:#0c2a1b; padding:8px 16px; border-radius:8px; z-index:1000; font-size:13px; max-width:90%;';
+    document.body.appendChild(ok);
+    setTimeout(() => ok.remove(), 2600);
+  });
+
+  // animation loop
+  let stop = false;
+  function loop() {
+    if (stop) return;
+    controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+
+  // ensure canvas sized before first frame
+  requestAnimationFrame(() => { resize(); loop(); });
+  const resizeObs = new ResizeObserver(resize);
+  resizeObs.observe(canvas);
+
+  return () => {
+    stop = true;
+    resizeObs.disconnect();
+    renderer.dispose();
+    controls.dispose();
+  };
+}

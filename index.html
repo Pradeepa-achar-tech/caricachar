@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CaricatureLab — Learn to draw caricatures</title>
+<link rel="stylesheet" href="css/style.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <span class="sidebar-logo">✺</span>
+        <div class="sidebar-brand-text">
+          <div class="sidebar-name">Caricachar</div>
+          <div class="sidebar-tag">learn · exaggerate · draw</div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav" id="nav"><!-- built by nav.js --></nav>
+
+      <div class="sidebar-footer">
+        Built with <svg class="love-heart" viewBox="0 0 24 24" fill="currentColor" aria-label="love"><path d="M12 21s-6.8-4.35-9.5-8.5C-.25 8 2.25 3.5 7 3.5c2.25 0 3.85 1.1 5 3 1.15-1.9 2.75-3 5-3 4.75 0 7.25 4.5 4.5 9-2.7 4.15-9.5 8.5-9.5 8.5z"/></svg>
+        by <strong class="author-name">Thanthrajnaani</strong>
+        in <strong class="author-name">Kundapura</strong>.
+      </div>
+    </aside>
+
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+    <div class="main-area">
+      <header class="topbar-mobile">
+        <button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu">☰</button>
+        <span class="topbar-mobile-brand"><span class="sidebar-logo">✺</span> CaricatureLab</span>
+      </header>
+      <main id="app"><!-- views render here --></main>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
