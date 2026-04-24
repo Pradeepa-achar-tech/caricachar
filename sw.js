@@ -1,6 +1,6 @@
 // Service Worker — offline shell + runtime cache.
 // Bump CACHE when you ship changes so clients pick up new assets.
-const CACHE = 'cl-shell-v3';
+const CACHE = 'cl-shell-v4';
 
 const SHELL = [
   './',
