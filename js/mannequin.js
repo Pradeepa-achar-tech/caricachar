@@ -10,8 +10,9 @@ export function renderPose3D(root) {
     <section class="panel">
       <h1>3D Pose reference</h1>
       <p style="color:var(--muted); margin-top:-4px;">
-        Rotate the camera with drag. Pose the mannequin with the sliders on the right,
-        or click a preset. Use the silhouette as a tracing reference in Studio.
+        <b>Click &amp; drag any body part</b> (head, arm, leg…) to pose it directly.
+        Drag the empty background to orbit the camera, scroll to zoom. Fine-tune with
+        the sliders or a preset, then save the silhouette as a tracing reference.
       </p>
       <div id="pose3d-root">
         <canvas id="pose3d-canvas"></canvas>
@@ -120,6 +121,8 @@ export function renderPose3D(root) {
   const shoulderPlate = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.14, 0.28), mat);
   shoulderPlate.position.y = torsoLen + 0.08;
   torsoGroup.add(shoulderPlate);
+  torsoMesh.userData.jointKey = 'torso';
+  shoulderPlate.userData.jointKey = 'torso';
 
   // Head
   const neckGroup = new THREE.Group();
@@ -133,27 +136,37 @@ export function renderPose3D(root) {
   head.position.y = 0.26;
   head.scale.y = 1.2;
   neckGroup.add(head);
+  neckMesh.userData.jointKey = 'neck';
+  head.userData.jointKey = 'neck';
 
   // Arms (hanging down from shoulder)
   function makeArm(sideSign, name) {
+    const shoulderKey = name + 'Shoulder';
+    const elbowKey = name + 'Elbow';
     const shoulder = new THREE.Group();
     shoulder.position.set(sideSign * 0.28, torsoLen + 0.08, 0);
     torsoGroup.add(shoulder);
-    joints[name + 'Shoulder'] = shoulder;
+    joints[shoulderKey] = shoulder;
     // Upper arm hangs down
     const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.24, 6, 12), mat);
     upper.position.y = -0.20;
     shoulder.add(upper);
-    shoulder.add(new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), jointMat));
+    const shoulderBall = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), jointMat);
+    shoulder.add(shoulderBall);
+    upper.userData.jointKey = shoulderKey;
+    shoulderBall.userData.jointKey = shoulderKey;
 
     const elbow = new THREE.Group();
     elbow.position.y = -0.40;
     shoulder.add(elbow);
-    joints[name + 'Elbow'] = elbow;
+    joints[elbowKey] = elbow;
     const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.22, 6, 12), mat);
     lower.position.y = -0.18;
     elbow.add(lower);
-    elbow.add(new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 10), jointMat));
+    const elbowBall = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 10), jointMat);
+    elbow.add(elbowBall);
+    lower.userData.jointKey = elbowKey;
+    elbowBall.userData.jointKey = elbowKey;
 
     // wrist + hand (mitten)
     const wrist = new THREE.Group();
@@ -163,29 +176,39 @@ export function renderPose3D(root) {
     const hand = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.17, 0.06), mat);
     hand.position.y = -0.08;
     wrist.add(hand);
+    // hand drives the elbow (wrist has no sliders), so grabbing the hand bends the arm
+    hand.userData.jointKey = elbowKey;
   }
   makeArm(1, 'right');
   makeArm(-1, 'left');
 
   // Legs
   function makeLeg(sideSign, name) {
+    const hipKey = name + 'Hip';
+    const kneeKey = name + 'Knee';
     const hip = new THREE.Group();
     hip.position.set(sideSign * 0.12, -0.05, 0);
     pelvis.add(hip);
-    joints[name + 'Hip'] = hip;
+    joints[hipKey] = hip;
     const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.36, 6, 12), mat);
     upper.position.y = -0.26;
     hip.add(upper);
-    hip.add(new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), jointMat));
+    const hipBall = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), jointMat);
+    hip.add(hipBall);
+    upper.userData.jointKey = hipKey;
+    hipBall.userData.jointKey = hipKey;
 
     const knee = new THREE.Group();
     knee.position.y = -0.52;
     hip.add(knee);
-    joints[name + 'Knee'] = knee;
+    joints[kneeKey] = knee;
     const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.34, 6, 12), mat);
     lower.position.y = -0.25;
     knee.add(lower);
-    knee.add(new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), jointMat));
+    const kneeBall = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), jointMat);
+    knee.add(kneeBall);
+    lower.userData.jointKey = kneeKey;
+    kneeBall.userData.jointKey = kneeKey;
 
     const ankle = new THREE.Group();
     ankle.position.y = -0.50;
@@ -194,6 +217,8 @@ export function renderPose3D(root) {
     const foot = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.06, 0.22), mat);
     foot.position.set(0, -0.03, 0.06);
     ankle.add(foot);
+    // foot drives the knee for direct manipulation
+    foot.userData.jointKey = kneeKey;
   }
   makeLeg(1, 'right');
   makeLeg(-1, 'left');
@@ -304,6 +329,133 @@ export function renderPose3D(root) {
       valEl.textContent = Math.round((v * 180) / Math.PI) + '°';
     });
   }
+
+  // ----- direct-manipulation (click & drag body parts) -----
+  // Build per-joint axis limits; any axis not declared is locked to 0.
+  const jointLimits = {};
+  jointDefs.forEach(def => {
+    if (!jointLimits[def.key]) {
+      jointLimits[def.key] = { x: { min: 0, max: 0 }, y: { min: 0, max: 0 }, z: { min: 0, max: 0 } };
+    }
+    jointLimits[def.key][def.axis] = { min: def.min, max: def.max };
+  });
+
+  // Collect every mesh tagged with a jointKey so raycasting is cheap and unambiguous.
+  const draggable = [];
+  scene.traverse(obj => { if (obj.isMesh && obj.userData.jointKey) draggable.push(obj); });
+
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  const dragPlane = new THREE.Plane();
+  const planeNormal = new THREE.Vector3();
+  const tmpV = new THREE.Vector3();
+  const parentInv = new THREE.Matrix4();
+  let drag = null;
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+  function pointerToNDC(ev) {
+    const rect = canvas.getBoundingClientRect();
+    ndc.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    ndc.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  }
+
+  function syncSlidersFor(jointKey) {
+    sliderEls.forEach(({ input, def, valEl }) => {
+      if (def.key !== jointKey) return;
+      const v = joints[def.key].rotation[def.axis];
+      input.value = v;
+      valEl.textContent = Math.round((v * 180) / Math.PI) + '°';
+    });
+  }
+
+  function pickBodyPart(ev) {
+    pointerToNDC(ev);
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObjects(draggable, false);
+    return hits.length ? hits[0] : null;
+  }
+
+  function onPointerDown(ev) {
+    // only start drag for primary mouse / single-finger touch / pen
+    if (ev.button !== undefined && ev.button !== 0) return;
+    const hit = pickBodyPart(ev);
+    if (!hit) return;
+    const jointKey = hit.object.userData.jointKey;
+    const joint = joints[jointKey];
+    if (!joint) return;
+
+    ev.stopPropagation(); // keep OrbitControls out of it
+    controls.enableRotate = false;
+    canvas.setPointerCapture(ev.pointerId);
+
+    // anchor: the clicked point expressed in the joint's local (pre-rotation) frame
+    const anchorLocal = joint.worldToLocal(hit.point.clone());
+    // drag plane: through the click, facing the camera
+    camera.getWorldDirection(planeNormal).negate();
+    dragPlane.setFromNormalAndCoplanarPoint(planeNormal, hit.point);
+
+    drag = { joint, jointKey, anchorLocal };
+    canvas.style.cursor = 'grabbing';
+  }
+
+  function onPointerMove(ev) {
+    if (!drag) {
+      // hover feedback — also disable camera-rotate while hovering a body part, so
+      // the next left-click drags the limb instead of orbiting the camera
+      const hit = pickBodyPart(ev);
+      if (hit) {
+        canvas.style.cursor = 'grab';
+        controls.enableRotate = false;
+      } else {
+        canvas.style.cursor = '';
+        controls.enableRotate = true;
+      }
+      return;
+    }
+    pointerToNDC(ev);
+    raycaster.setFromCamera(ndc, camera);
+    const target = raycaster.ray.intersectPlane(dragPlane, tmpV);
+    if (!target) return;
+
+    const { joint, jointKey, anchorLocal } = drag;
+    // express target in the joint's PARENT local space, relative to the joint origin
+    parentInv.copy(joint.parent.matrixWorld).invert();
+    const targetInParent = target.clone().applyMatrix4(parentInv);
+    const newDir = targetInParent.sub(joint.position).normalize();
+    const oldDir = anchorLocal.clone().normalize();
+    if (!isFinite(newDir.x) || newDir.lengthSq() < 1e-8) return;
+    if (oldDir.lengthSq() < 1e-8) return;
+
+    const q = new THREE.Quaternion().setFromUnitVectors(oldDir, newDir);
+    joint.quaternion.copy(q);
+    // clamp each axis to the declared slider range (locks hinge joints to their 1 axis)
+    const lim = jointLimits[jointKey];
+    if (lim) {
+      const r = joint.rotation;
+      const cx = clamp(r.x, lim.x.min, lim.x.max);
+      const cy = clamp(r.y, lim.y.min, lim.y.max);
+      const cz = clamp(r.z, lim.z.min, lim.z.max);
+      joint.rotation.set(cx, cy, cz);
+    }
+    syncSlidersFor(jointKey);
+  }
+
+  function onPointerUp(ev) {
+    if (!drag) return;
+    try { canvas.releasePointerCapture(ev.pointerId); } catch (_) {}
+    drag = null;
+    controls.enableRotate = true;
+    canvas.style.cursor = '';
+    // the next pointermove will re-run hover logic and re-disable rotate if we're
+    // still hovering a body part
+  }
+
+  // capture-phase pointerdown so we beat OrbitControls to the event
+  canvas.addEventListener('pointerdown', onPointerDown, { capture: true });
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerUp);
+  canvas.addEventListener('pointerleave', () => { if (!drag) canvas.style.cursor = ''; });
 
   const presetRow = ctrl.querySelector('#preset-row');
   Object.keys(presets).forEach(name => {
