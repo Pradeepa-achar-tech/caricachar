@@ -1085,9 +1085,15 @@ button { -webkit-tap-highlight-color: transparent; }
   /* Studio canvas: no overscroll, full-bleed. */
   .studio-canvas { border-radius: 10px; }
 
-  /* 3D pose on phones — taller canvas, stacked controls. */
-  #pose3d-canvas { aspect-ratio: 1 / 1; }
+  /* 3D pose on phones — taller portrait canvas so the standing figure
+     fills the viewport instead of being a tiny square. */
+  #pose3d-canvas { aspect-ratio: 3 / 4; }
   .pose-ctrl { padding: 12px; border-radius: 14px; }
+
+  /* Sketch Grid on phones — let the paper preview take full stage height.
+     100svh handles mobile browser chrome; vh is the fallback for older browsers. */
+  .grid-stage { min-height: calc(100vh - 220px); min-height: calc(100svh - 220px); padding: 12px; }
+  .grid-paper svg { max-height: calc(100vh - 260px); max-height: calc(100svh - 260px); }
 
   /* Toolbar rows wrap nicely. */
   .toolbar { gap: 8px; padding: 10px; }
