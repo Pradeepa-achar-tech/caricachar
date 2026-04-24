@@ -136,3 +136,48 @@ export function toast(message, { kind = 'good', ms = 2200 } = {}) {
     setTimeout(() => el.remove(), 200);
   }, ms);
 }
+
+// Install global handlers so ANY native dialog or unhandled error routes through
+// our in-app UI instead of the ugly browser chrome. Safe to call once at boot.
+let globalsInstalled = false;
+export function installGlobalHandlers() {
+  if (globalsInstalled) return;
+  globalsInstalled = true;
+
+  // Intercept native dialogs. Their sync return contract can't be preserved
+  // (our modal is async), but nothing in our app uses them synchronously.
+  const originalAlert = window.alert.bind(window);
+  window.alert = (msg) => { alert(String(msg == null ? '' : msg)); };
+  window.confirm = (msg) => {
+    confirm(String(msg == null ? '' : msg));
+    return false; // sync contract broken, but we never rely on it
+  };
+  window.prompt = (msg, def = '') => {
+    prompt(String(msg == null ? '' : msg), def);
+    return null;
+  };
+  // Stash the originals in case dev tools / user wants them back
+  window.__nativeAlert = originalAlert;
+
+  // Surface runtime errors as a toast so users aren't left confused by a
+  // silent-looking failure. Keep messages short; full detail stays in console.
+  window.addEventListener('error', (ev) => {
+    const msg = ev?.message || 'Something went wrong';
+    if (msg.includes('ResizeObserver')) return; // noisy, non-actionable
+    toast(trim('Error: ' + msg), { kind: 'error', ms: 3600 });
+  });
+  window.addEventListener('unhandledrejection', (ev) => {
+    const reason = ev?.reason;
+    const msg = (reason && reason.message) ? reason.message : String(reason || 'Unknown error');
+    toast(trim('Error: ' + msg), { kind: 'error', ms: 3600 });
+  });
+
+  // Online/offline feedback — important on PWAs that might be flaky on metro.
+  window.addEventListener('online',  () => toast('Back online', { kind: 'good', ms: 1600 }));
+  window.addEventListener('offline', () => toast('You are offline — saved work still works.', { kind: 'warn', ms: 2600 }));
+}
+
+function trim(s, n = 110) {
+  s = String(s);
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}

@@ -1,6 +1,6 @@
 // Service Worker — offline shell + runtime cache.
 // Bump CACHE when you ship changes so clients pick up new assets.
-const CACHE = 'cl-shell-v2';
+const CACHE = 'cl-shell-v3';
 
 const SHELL = [
   './',
@@ -30,8 +30,12 @@ self.addEventListener('install', (event) => {
       .then((cache) => cache.addAll(SHELL).catch((err) => {
         console.warn('[sw] partial shell cache:', err);
       }))
-      .then(() => self.skipWaiting())
+      // Don't auto-skip — wait for the user to tap "Reload" in the in-app prompt.
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
