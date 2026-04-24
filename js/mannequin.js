@@ -10,9 +10,11 @@ export function renderPose3D(root) {
     <section class="panel">
       <h1>3D Pose reference</h1>
       <p style="color:var(--muted); margin-top:-4px;">
-        <b>Click &amp; drag any body part</b> (head, arm, leg…) to pose it directly.
-        Drag the empty background to orbit the camera, scroll to zoom. Fine-tune with
-        the sliders or a preset, then save the silhouette as a tracing reference.
+        <b>Click &amp; drag any body part</b> to pose it directly. Drag the
+        <b>hand</b> or <b>foot</b> and the whole limb follows (2-bone IK). Drag the
+        <b>hips</b> to turn the whole figure. Drag the empty background to orbit
+        the camera; scroll to zoom. Fine-tune with the sliders or a preset, then
+        save the silhouette as a tracing reference.
       </p>
       <div id="pose3d-root">
         <canvas id="pose3d-canvas"></canvas>
@@ -99,9 +101,10 @@ export function renderPose3D(root) {
   scene.add(pelvis);
   joints.pelvis = pelvis;
 
-  // Hip plate
+  // Hip plate — drag this to rotate the whole figure.
   const hipBox = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.22, 0.28), mat);
   pelvis.add(hipBox);
+  hipBox.userData.jointKey = 'pelvis';
 
   // Spine / torso — bone up, so we flip: attach and rotate manually.
   const torsoGroup = new THREE.Group();
@@ -176,8 +179,8 @@ export function renderPose3D(root) {
     const hand = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.17, 0.06), mat);
     hand.position.y = -0.08;
     wrist.add(hand);
-    // hand drives the elbow (wrist has no sliders), so grabbing the hand bends the arm
-    hand.userData.jointKey = elbowKey;
+    // dragging the hand runs 2-bone IK on the whole arm (shoulder + elbow)
+    hand.userData.jointKey = name + 'Hand';
   }
   makeArm(1, 'right');
   makeArm(-1, 'left');
@@ -217,8 +220,8 @@ export function renderPose3D(root) {
     const foot = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.06, 0.22), mat);
     foot.position.set(0, -0.03, 0.06);
     ankle.add(foot);
-    // foot drives the knee for direct manipulation
-    foot.userData.jointKey = kneeKey;
+    // dragging the foot runs 2-bone IK on the whole leg (hip + knee)
+    foot.userData.jointKey = name + 'Foot';
   }
   makeLeg(1, 'right');
   makeLeg(-1, 'left');
@@ -226,30 +229,47 @@ export function renderPose3D(root) {
   // ----- joint control definitions -----
   // Each entry: {label, target-path (joint name), axis: 'x'|'y'|'z', min, max}
   const jointDefs = [
-    { label: 'Head tilt (front/back)', key: 'neck', axis: 'x', min: -0.6, max: 0.6 },
-    { label: 'Head turn (l/r)',        key: 'neck', axis: 'y', min: -1.2, max: 1.2 },
+    { label: 'Pelvis rotate (facing)', key: 'pelvis', axis: 'y', min: -Math.PI, max: Math.PI },
+    { label: 'Pelvis tilt (front)',    key: 'pelvis', axis: 'x', min: -0.6, max: 0.6 },
+    { label: 'Pelvis lean (l/r)',      key: 'pelvis', axis: 'z', min: -0.5, max: 0.5 },
 
-    { label: 'Torso bend (front)',     key: 'torso', axis: 'x', min: -0.5, max: 0.8 },
-    { label: 'Torso twist',            key: 'torso', axis: 'y', min: -0.8, max: 0.8 },
-    { label: 'Torso lean (l/r)',       key: 'torso', axis: 'z', min: -0.5, max: 0.5 },
+    { label: 'Head tilt (front/back)', key: 'neck', axis: 'x', min: -0.9, max: 0.9 },
+    { label: 'Head turn (l/r)',        key: 'neck', axis: 'y', min: -1.5, max: 1.5 },
+    { label: 'Head tilt (l/r)',        key: 'neck', axis: 'z', min: -0.6, max: 0.6 },
 
-    { label: 'L shoulder fwd/back',    key: 'leftShoulder', axis: 'x', min: -2.2, max: 2.2 },
-    { label: 'L shoulder out',         key: 'leftShoulder', axis: 'z', min: -1.7, max: 0.5 },
-    { label: 'L shoulder rotate',      key: 'leftShoulder', axis: 'y', min: -1.5, max: 1.5 },
-    { label: 'L elbow bend',           key: 'leftElbow', axis: 'x', min: 0, max: 2.4 },
+    { label: 'Torso bend (front/back)', key: 'torso', axis: 'x', min: -1.2, max: 1.2 },
+    { label: 'Torso twist',             key: 'torso', axis: 'y', min: -1.4, max: 1.4 },
+    { label: 'Torso lean (l/r)',        key: 'torso', axis: 'z', min: -0.8, max: 0.8 },
 
-    { label: 'R shoulder fwd/back',    key: 'rightShoulder', axis: 'x', min: -2.2, max: 2.2 },
-    { label: 'R shoulder out',         key: 'rightShoulder', axis: 'z', min: -0.5, max: 1.7 },
-    { label: 'R shoulder rotate',      key: 'rightShoulder', axis: 'y', min: -1.5, max: 1.5 },
-    { label: 'R elbow bend',           key: 'rightElbow', axis: 'x', min: 0, max: 2.4 },
+    { label: 'L shoulder fwd/back',    key: 'leftShoulder', axis: 'x', min: -3.0, max: 3.0 },
+    { label: 'L shoulder out',         key: 'leftShoulder', axis: 'z', min: -2.4, max: 1.0 },
+    { label: 'L shoulder rotate',      key: 'leftShoulder', axis: 'y', min: -1.9, max: 1.9 },
+    { label: 'L elbow bend',           key: 'leftElbow', axis: 'x', min: 0, max: 2.8 },
+    { label: 'L forearm twist',        key: 'leftElbow', axis: 'y', min: -1.6, max: 1.6 },
+    { label: 'L wrist bend',           key: 'leftWrist', axis: 'x', min: -1.2, max: 1.2 },
+    { label: 'L wrist side',           key: 'leftWrist', axis: 'z', min: -0.5, max: 0.5 },
 
-    { label: 'L hip fwd/back',         key: 'leftHip', axis: 'x', min: -1.4, max: 1.8 },
-    { label: 'L hip out',              key: 'leftHip', axis: 'z', min: -1.2, max: 0.3 },
-    { label: 'L knee bend',            key: 'leftKnee', axis: 'x', min: -2.4, max: 0 },
+    { label: 'R shoulder fwd/back',    key: 'rightShoulder', axis: 'x', min: -3.0, max: 3.0 },
+    { label: 'R shoulder out',         key: 'rightShoulder', axis: 'z', min: -1.0, max: 2.4 },
+    { label: 'R shoulder rotate',      key: 'rightShoulder', axis: 'y', min: -1.9, max: 1.9 },
+    { label: 'R elbow bend',           key: 'rightElbow', axis: 'x', min: 0, max: 2.8 },
+    { label: 'R forearm twist',        key: 'rightElbow', axis: 'y', min: -1.6, max: 1.6 },
+    { label: 'R wrist bend',           key: 'rightWrist', axis: 'x', min: -1.2, max: 1.2 },
+    { label: 'R wrist side',           key: 'rightWrist', axis: 'z', min: -0.5, max: 0.5 },
 
-    { label: 'R hip fwd/back',         key: 'rightHip', axis: 'x', min: -1.4, max: 1.8 },
-    { label: 'R hip out',              key: 'rightHip', axis: 'z', min: -0.3, max: 1.2 },
-    { label: 'R knee bend',            key: 'rightKnee', axis: 'x', min: -2.4, max: 0 },
+    { label: 'L hip fwd/back',         key: 'leftHip', axis: 'x', min: -1.8, max: 2.4 },
+    { label: 'L hip out',              key: 'leftHip', axis: 'z', min: -1.6, max: 0.5 },
+    { label: 'L hip rotate',           key: 'leftHip', axis: 'y', min: -1.2, max: 1.2 },
+    { label: 'L knee bend',            key: 'leftKnee', axis: 'x', min: -2.8, max: 0.1 },
+    { label: 'L ankle point',          key: 'leftAnkle', axis: 'x', min: -0.8, max: 1.0 },
+    { label: 'L ankle tilt',           key: 'leftAnkle', axis: 'z', min: -0.4, max: 0.4 },
+
+    { label: 'R hip fwd/back',         key: 'rightHip', axis: 'x', min: -1.8, max: 2.4 },
+    { label: 'R hip out',              key: 'rightHip', axis: 'z', min: -0.5, max: 1.6 },
+    { label: 'R hip rotate',           key: 'rightHip', axis: 'y', min: -1.2, max: 1.2 },
+    { label: 'R knee bend',            key: 'rightKnee', axis: 'x', min: -2.8, max: 0.1 },
+    { label: 'R ankle point',          key: 'rightAnkle', axis: 'x', min: -0.8, max: 1.0 },
+    { label: 'R ankle tilt',           key: 'rightAnkle', axis: 'z', min: -0.4, max: 0.4 },
   ];
 
   // presets (all values in radians)
@@ -344,6 +364,17 @@ export function renderPose3D(root) {
   const draggable = [];
   scene.traverse(obj => { if (obj.isMesh && obj.userData.jointKey) draggable.push(obj); });
 
+  // 2-bone IK chains. When the user drags a hand/foot, we solve shoulder+elbow (or hip+knee)
+  // so the whole limb follows. midBendSign is the rotation sign convention for the mid-joint
+  // in our rig (elbow uses +x to bend, knee uses -x). pole hints which side the mid-joint
+  // should bulge toward when the limb is currently straight.
+  const ikChains = {
+    leftHand:  { rootKey: 'leftShoulder',  midKey: 'leftElbow',  pole: new THREE.Vector3(0, -1, 0), midBendSign: +1 },
+    rightHand: { rootKey: 'rightShoulder', midKey: 'rightElbow', pole: new THREE.Vector3(0, -1, 0), midBendSign: +1 },
+    leftFoot:  { rootKey: 'leftHip',       midKey: 'leftKnee',   pole: new THREE.Vector3(0,  0, 1), midBendSign: -1 },
+    rightFoot: { rootKey: 'rightHip',      midKey: 'rightKnee',  pole: new THREE.Vector3(0,  0, 1), midBendSign: -1 },
+  };
+
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const dragPlane = new THREE.Plane();
@@ -359,13 +390,25 @@ export function renderPose3D(root) {
     ndc.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
   }
 
-  function syncSlidersFor(jointKey) {
+  function syncSlidersFor(...jointKeys) {
+    const set = new Set(jointKeys);
     sliderEls.forEach(({ input, def, valEl }) => {
-      if (def.key !== jointKey) return;
+      if (!set.has(def.key)) return;
       const v = joints[def.key].rotation[def.axis];
       input.value = v;
       valEl.textContent = Math.round((v * 180) / Math.PI) + '°';
     });
+  }
+
+  function applyLimits(joint, jointKey) {
+    const lim = jointLimits[jointKey];
+    if (!lim) return;
+    const r = joint.rotation;
+    r.set(
+      clamp(r.x, lim.x.min, lim.x.max),
+      clamp(r.y, lim.y.min, lim.y.max),
+      clamp(r.z, lim.z.min, lim.z.max)
+    );
   }
 
   function pickBodyPart(ev) {
@@ -375,26 +418,119 @@ export function renderPose3D(root) {
     return hits.length ? hits[0] : null;
   }
 
+  // Solve a 2-bone IK chain so the `anchor` point on the mid-joint chain reaches `targetWorld`.
+  function solve2BoneIK(chain, anchorInMidLocal, targetWorld) {
+    const rootJoint = joints[chain.rootKey];
+    const midJoint = joints[chain.midKey];
+    const parent = rootJoint.parent;
+
+    const L1 = Math.abs(midJoint.position.y);
+    const L2 = anchorInMidLocal.length();
+    if (L1 < 1e-3 || L2 < 1e-3) return;
+
+    // Target in the root joint's parent-local space.
+    const pInv = new THREE.Matrix4().copy(parent.matrixWorld).invert();
+    const T_local = targetWorld.clone().applyMatrix4(pInv);
+    const S_local = rootJoint.position;
+    const chord = T_local.clone().sub(S_local);
+    let d = chord.length();
+    const minD = Math.max(Math.abs(L1 - L2) + 1e-3, 1e-3);
+    const maxD = L1 + L2 - 1e-3;
+    if (d < minD) { chord.setLength(minD); d = minD; }
+    else if (d > maxD) { chord.setLength(maxD); d = maxD; }
+    const dir = chord.clone().divideScalar(d);
+
+    // Preserve the current bend direction if the limb is already bent; otherwise fall back
+    // to the configured pole. Lets drags feel like they continue an existing pose rather
+    // than snapping to a canonical solution on every frame.
+    const rootWorld = new THREE.Vector3();
+    rootJoint.getWorldPosition(rootWorld);
+    const midWorld = new THREE.Vector3();
+    midJoint.getWorldPosition(midWorld);
+    const anchorWorld = anchorInMidLocal.clone().applyMatrix4(midJoint.matrixWorld);
+    const chordW = anchorWorld.clone().sub(rootWorld);
+    let perpLocal;
+    if (chordW.lengthSq() > 1e-6) {
+      const chordDirW = chordW.clone().normalize();
+      const relMid = midWorld.clone().sub(rootWorld);
+      const perpW = relMid.sub(chordDirW.clone().multiplyScalar(relMid.dot(chordDirW)));
+      if (perpW.lengthSq() > 1e-5) {
+        const pWQ = new THREE.Quaternion();
+        parent.getWorldQuaternion(pWQ).invert();
+        perpLocal = perpW.normalize().applyQuaternion(pWQ);
+      }
+    }
+    if (!perpLocal) perpLocal = chain.pole.clone();
+    perpLocal.addScaledVector(dir, -perpLocal.dot(dir));
+    if (perpLocal.lengthSq() < 1e-6) {
+      perpLocal.set(1, 0, 0);
+      if (Math.abs(perpLocal.dot(dir)) > 0.9) perpLocal.set(0, 0, 1);
+      perpLocal.addScaledVector(dir, -perpLocal.dot(dir));
+    }
+    perpLocal.normalize();
+
+    // Law of cosines: where does the mid-joint sit relative to the chord?
+    const a = (L1 * L1 + d * d - L2 * L2) / (2 * d);
+    const h = Math.sqrt(Math.max(L1 * L1 - a * a, 0));
+    const upperDir = dir.clone().multiplyScalar(a).addScaledVector(perpLocal, h).normalize();
+
+    // Build root-joint rotation so local -Y (where the bone points) aligns with upperDir,
+    // and local +X = bendNormal (mid-joint's hinge axis). Flipping bendNormal for legs
+    // mirrors the bend plane so the knee's negative-x rotation convention works out.
+    const yAxisP = upperDir.clone().negate();
+    const bendNormal = new THREE.Vector3().crossVectors(perpLocal, dir);
+    if (chain.midBendSign < 0) bendNormal.negate();
+    bendNormal.normalize();
+    const xAxisP = bendNormal;
+    const zAxisP = new THREE.Vector3().crossVectors(xAxisP, yAxisP).normalize();
+    xAxisP.crossVectors(yAxisP, zAxisP).normalize();
+
+    const m = new THREE.Matrix4().makeBasis(xAxisP, yAxisP, zAxisP);
+    rootJoint.quaternion.setFromRotationMatrix(m);
+
+    // Mid-joint bend: compute the desired lower-bone direction in mid-local and use atan2
+    // so the sign falls out naturally (positive for elbow, negative for knee).
+    const midPosParent = S_local.clone().add(upperDir.clone().multiplyScalar(L1));
+    const tipDirParent = T_local.clone().sub(midPosParent).normalize();
+    const yComp = tipDirParent.dot(yAxisP);
+    const zComp = tipDirParent.dot(zAxisP);
+    // rotate(0,-1,0) around +x by α = (0, -cos α, -sin α) → y = -cos α, z = -sin α
+    const alpha = Math.atan2(-zComp, -yComp);
+    midJoint.rotation.set(alpha, midJoint.rotation.y, midJoint.rotation.z);
+
+    applyLimits(rootJoint, chain.rootKey);
+    applyLimits(midJoint, chain.midKey);
+    syncSlidersFor(chain.rootKey, chain.midKey);
+  }
+
   function onPointerDown(ev) {
     // only start drag for primary mouse / single-finger touch / pen
     if (ev.button !== undefined && ev.button !== 0) return;
     const hit = pickBodyPart(ev);
     if (!hit) return;
     const jointKey = hit.object.userData.jointKey;
-    const joint = joints[jointKey];
-    if (!joint) return;
+    const ikChain = ikChains[jointKey];
+    const joint = ikChain ? null : joints[jointKey];
+    if (!ikChain && !joint) return;
 
     ev.stopPropagation(); // keep OrbitControls out of it
     controls.enableRotate = false;
     canvas.setPointerCapture(ev.pointerId);
 
-    // anchor: the clicked point expressed in the joint's local (pre-rotation) frame
-    const anchorLocal = joint.worldToLocal(hit.point.clone());
     // drag plane: through the click, facing the camera
     camera.getWorldDirection(planeNormal).negate();
     dragPlane.setFromNormalAndCoplanarPoint(planeNormal, hit.point);
 
-    drag = { joint, jointKey, anchorLocal };
+    if (ikChain) {
+      // anchor on the hand/foot mesh, expressed in the mid-joint's local frame
+      const midJoint = joints[ikChain.midKey];
+      const anchorInMidLocal = midJoint.worldToLocal(hit.point.clone());
+      drag = { kind: 'ik', chain: ikChain, anchorInMidLocal };
+    } else {
+      // single-joint drag: rotate this one joint so the clicked point follows the mouse
+      const anchorLocal = joint.worldToLocal(hit.point.clone());
+      drag = { kind: 'single', joint, jointKey, anchorLocal };
+    }
     canvas.style.cursor = 'grabbing';
   }
 
@@ -417,6 +553,11 @@ export function renderPose3D(root) {
     const target = raycaster.ray.intersectPlane(dragPlane, tmpV);
     if (!target) return;
 
+    if (drag.kind === 'ik') {
+      solve2BoneIK(drag.chain, drag.anchorInMidLocal, target);
+      return;
+    }
+
     const { joint, jointKey, anchorLocal } = drag;
     // express target in the joint's PARENT local space, relative to the joint origin
     parentInv.copy(joint.parent.matrixWorld).invert();
@@ -428,15 +569,7 @@ export function renderPose3D(root) {
 
     const q = new THREE.Quaternion().setFromUnitVectors(oldDir, newDir);
     joint.quaternion.copy(q);
-    // clamp each axis to the declared slider range (locks hinge joints to their 1 axis)
-    const lim = jointLimits[jointKey];
-    if (lim) {
-      const r = joint.rotation;
-      const cx = clamp(r.x, lim.x.min, lim.x.max);
-      const cy = clamp(r.y, lim.y.min, lim.y.max);
-      const cz = clamp(r.z, lim.z.min, lim.z.max);
-      joint.rotation.set(cx, cy, cz);
-    }
+    applyLimits(joint, jointKey);
     syncSlidersFor(jointKey);
   }
 
